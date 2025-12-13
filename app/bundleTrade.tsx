@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -17,7 +18,9 @@ import { crescaBucketProtocolService } from '../services/contractServices';
 import { web3Service } from '../services/web3Service';
 import { priceService, BundlePrice } from '../services/priceService';
 
-export default function BundlesScreen() {
+export default function BundleTradeScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
   const [walletAddress, setWalletAddress] = useState('');
   const [balance, setBalance] = useState('0.000');
   const [isLoading, setIsLoading] = useState(true);
@@ -137,7 +140,7 @@ export default function BundlesScreen() {
         investmentAmount
       );
       
-      const explorerUrl = `https://explorer.testnet.monad.xyz/tx/${txHash}`;
+      const explorerUrl = `https://monad-testnet.socialscan.io/tx/${txHash}`;
       
       Alert.alert(
         '✓ Trade Executed',
@@ -207,12 +210,12 @@ export default function BundlesScreen() {
       <ScrollView style={styles.scrollView}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#1F2937" />
           </TouchableOpacity>
           <View>
             <Text style={styles.headerTitle}>Bundle Trading</Text>
-            <Text style={styles.headerSubtitle}>The Standard Bundle</Text>
+            <Text style={styles.headerSubtitle}>{params.bundleName || 'The Standard Bundle'}</Text>
           </View>
           <View style={{ width: 24 }} />
         </View>
@@ -221,10 +224,10 @@ export default function BundlesScreen() {
         <View style={styles.bundleCard}>
           <View style={styles.bundleHeader}>
             <Ionicons name="trending-up" size={20} color="#6C5CE7" />
-            <Text style={styles.bundleTitle}>The Standard Bundle</Text>
+            <Text style={styles.bundleTitle}>{params.bundleName || 'The Standard Bundle'}</Text>
             {priceLoading && <ActivityIndicator size="small" color="#6C5CE7" />}
           </View>
-          <Text style={styles.bundleComposition}>BTC 50% • ETH 30% • SOL 20%</Text>
+          <Text style={styles.bundleComposition}>{params.composition || 'BTC 50% • ETH 30% • SOL 20%'}</Text>
           
           {/* Live Prices */}
           {bundlePrices && (
@@ -287,77 +290,6 @@ export default function BundlesScreen() {
         {/* Leverage Slider */}
         {renderLeverageSlider()}
 
-        {/* Position Direction */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Position Direction</Text>
-          <View style={styles.positionButtons}>
-            <TouchableOpacity
-              style={[
-                styles.positionButton,
-                styles.longButton,
-                positionType === 'long' && styles.positionButtonActive
-              ]}
-              onPress={() => setPositionType('long')}
-            >
-              <Ionicons name="trending-up" size={20} color="#FFFFFF" />
-              <Text style={styles.positionButtonText}>LONG</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.positionButton,
-                styles.shortButton,
-                positionType === 'short' && styles.positionButtonActive
-              ]}
-              onPress={() => setPositionType('short')}
-            >
-              <Ionicons name="trending-down" size={20} color="#EF4444" />
-              <Text style={[styles.positionButtonText, styles.shortButtonText]}>SHORT</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.hint}>
-            Profit when bundle price {positionType === 'long' ? 'increases' : 'decreases'}
-          </Text>
-        </View>
-
-        {/* Transaction Summary */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Transaction Summary</Text>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Investment</Text>
-            <Text style={styles.summaryValue}>{investmentAmount || '0'} MON</Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Leverage</Text>
-            <Text style={styles.summaryValue}>{leverage}x</Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Position</Text>
-            <Text style={[
-              styles.summaryValue,
-              positionType === 'long' ? styles.longText : styles.shortText
-            ]}>
-              {positionType.toUpperCase()}
-            </Text>
-          </View>
-          
-          <View style={[styles.summaryRow, styles.summaryTotal]}>
-            <Text style={styles.summaryTotalLabel}>Total Exposure</Text>
-            <Text style={styles.summaryTotalValue}>{totalExposure.toFixed(2)} MON</Text>
-          </View>
-        </View>
-
-        {/* Risk Warning */}
-        <View style={styles.warningCard}>
-          <Ionicons name="warning" size={20} color="#F59E0B" />
-          <Text style={styles.warningText}>
-            Leveraged trading involves significant risk. You may lose more than your initial investment.
-          </Text>
-        </View>
-
         {/* Execute Button */}
         <TouchableOpacity
           style={styles.executeButton}
@@ -368,9 +300,13 @@ export default function BundlesScreen() {
           <Text style={styles.executeButtonText}>Execute Trade</Text>
         </TouchableOpacity>
 
-        <Text style={styles.processSteps}>
-          This will execute: Init → Create Bucket → Deposit → Open Position
-        </Text>
+        {/* Risk Warning */}
+        <View style={styles.warningCard}>
+          <Ionicons name="warning" size={20} color="#F59E0B" />
+          <Text style={styles.warningText}>
+            Leveraged trading involves significant risk. You may lose more than your initial investment.
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -591,49 +527,6 @@ const styles = StyleSheet.create({
   shortText: {
     color: '#EF4444',
   },
-  summaryCard: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#F9FAFB',
-  },
-  summaryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 16,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  summaryTotal: {
-    marginTop: 8,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  summaryTotalLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  summaryTotalValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#6C5CE7',
-  },
   warningCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -656,6 +549,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     marginHorizontal: 20,
+    marginTop: 24,
     marginBottom: 12,
     padding: 18,
     borderRadius: 12,
@@ -665,12 +559,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
-  },
-  processSteps: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    marginHorizontal: 20,
-    marginBottom: 32,
   },
 });

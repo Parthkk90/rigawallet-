@@ -57,8 +57,26 @@ class CrescaCalendarPaymentsService {
     );
   }
 
-  // Create scheduled payment with production-grade transaction handling
+  // Wrapper method for simple recurring payments (uses default values)
   async createScheduledPayment(
+    recipient: string,
+    amount: string,
+    intervalDays: number
+  ): Promise<string> {
+    // Calculate execution time: start tomorrow at same time
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0); // Default to noon
+    const executeAt = Math.floor(tomorrow.getTime() / 1000);
+    
+    const intervalSeconds = intervalDays * 24 * 60 * 60;
+    const occurrences = 12; // Default to 12 payments (1 year if monthly)
+    
+    return this.createSchedule(recipient, amount, executeAt, intervalSeconds, occurrences);
+  }
+
+  // Create scheduled payment with full control
+  async createSchedule(
     recipient: string,
     amount: string,
     executeAt: number,
@@ -133,28 +151,67 @@ class CrescaCalendarPaymentsService {
   async executePayment(payerAddress: string, scheduleId: number): Promise<string> {
     try {
       console.log('⚡ Executing scheduled payment...');
+      console.log('  Payer:', payerAddress);
+      console.log('  Schedule ID:', scheduleId);
+      
       const contract = this.getContract();
-      const tx = await contract.executeSchedule(payerAddress, scheduleId);
+      
+      // Estimate gas first
+      const gasEstimate = await contract.executeSchedule.estimateGas(payerAddress, scheduleId);
+      console.log('⛽ Estimated gas:', gasEstimate.toString());
+      
+      const tx = await contract.executeSchedule(payerAddress, scheduleId, {
+        gasLimit: gasEstimate + (gasEstimate / BigInt(4)) // 25% buffer
+      });
+      
+      console.log('📡 Transaction submitted:', tx.hash);
+      console.log('⏳ Waiting for confirmation...');
+      
       const receipt = await tx.wait();
-      console.log('✅ Payment executed successfully!');
-      return receipt.hash;
-    } catch (error) {
-      console.error('Error executing payment:', error);
-      throw error;
+      
+      if (receipt?.status === 1) {
+        console.log('✅ Payment executed successfully!');
+        console.log('📊 Gas used:', receipt.gasUsed.toString());
+        return receipt.hash;
+      } else {
+        throw new Error('Transaction failed during execution');
+      }
+    } catch (error: any) {
+      console.error('❌ Error executing payment:', error.message);
+      throw new Error(`Failed to execute payment: ${error.message}`);
     }
   }
 
   async cancelPayment(scheduleId: number): Promise<string> {
     try {
       console.log('🚫 Canceling scheduled payment...');
+      console.log('  Schedule ID:', scheduleId);
+      
       const contract = this.getContract();
-      const tx = await contract.cancelSchedule(scheduleId);
+      
+      // Estimate gas first
+      const gasEstimate = await contract.cancelSchedule.estimateGas(scheduleId);
+      console.log('⛽ Estimated gas:', gasEstimate.toString());
+      
+      const tx = await contract.cancelSchedule(scheduleId, {
+        gasLimit: gasEstimate + (gasEstimate / BigInt(4)) // 25% buffer
+      });
+      
+      console.log('📡 Transaction submitted:', tx.hash);
+      console.log('⏳ Waiting for confirmation...');
+      
       const receipt = await tx.wait();
-      console.log('✅ Payment cancelled successfully!');
-      return receipt.hash;
-    } catch (error) {
-      console.error('Error canceling payment:', error);
-      throw error;
+      
+      if (receipt?.status === 1) {
+        console.log('✅ Payment cancelled successfully!');
+        console.log('📊 Gas used:', receipt.gasUsed.toString());
+        return receipt.hash;
+      } else {
+        throw new Error('Transaction failed during execution');
+      }
+    } catch (error: any) {
+      console.error('❌ Error canceling payment:', error.message);
+      throw new Error(`Failed to cancel schedule: ${error.message}`);
     }
   }
 
@@ -165,26 +222,33 @@ class CrescaCalendarPaymentsService {
         return [];
       }
       
+      console.log('📋 Fetching schedules for:', userAddress);
       const contract = this.getContract();
       const schedules = await contract.getUserSchedules(userAddress);
       
-      const payments: ScheduledPayment[] = schedules.map((schedule: any, index: number) => ({
-        id: index,
-        payer: schedule.payer,
-        recipient: schedule.recipient,
-        amount: ethers.formatEther(schedule.amount),
-        executeAt: Number(schedule.executeAt),
-        intervalSeconds: Number(schedule.intervalSeconds),
-        occurrences: Number(schedule.occurrences),
-        executedCount: Number(schedule.executedCount),
-        active: schedule.active,
-        escrowBalance: ethers.formatEther(schedule.escrowBalance),
-        createdAt: Number(schedule.createdAt),
-      }));
+      console.log(`📊 Found ${schedules.length} schedules`);
+      
+      const payments: ScheduledPayment[] = schedules.map((schedule: any, index: number) => {
+        const payment = {
+          id: Number(schedule.scheduleId || index), // Use contract's scheduleId if available, fallback to index
+          payer: schedule.payer,
+          recipient: schedule.recipient,
+          amount: ethers.formatEther(schedule.amount),
+          executeAt: Number(schedule.executeAt),
+          intervalSeconds: Number(schedule.intervalSeconds),
+          occurrences: Number(schedule.occurrences),
+          executedCount: Number(schedule.executedCount),
+          active: schedule.active,
+          escrowBalance: ethers.formatEther(schedule.escrowBalance),
+          createdAt: Number(schedule.createdAt),
+        };
+        console.log(`  Schedule ${payment.id}: ${payment.amount} MON to ${payment.recipient.substring(0, 8)}... [${payment.active ? 'Active' : 'Inactive'}]`);
+        return payment;
+      });
       
       return payments;
     } catch (error) {
-      console.error('Error getting user payments:', error);
+      console.error('❌ Error getting user payments:', error);
       return [];
     }
   }
@@ -527,6 +591,16 @@ class CrescaBucketProtocolService {
       const contract = this.getContract();
       const marginWei = ethers.parseEther(marginAmount);
 
+      // Step 1: Deposit collateral first
+      console.log('💰 Step 1: Depositing collateral...');
+      const depositTx = await contract.depositCollateral({
+        value: marginWei
+      });
+      await depositTx.wait();
+      console.log('✅ Collateral deposited successfully!');
+
+      // Step 2: Open the position using deposited collateral
+      console.log('📊 Step 2: Opening position...');
       const tx = await contract.openPosition(bucketId, isLong, marginWei);
       const receipt = await tx.wait();
       
@@ -538,6 +612,18 @@ class CrescaBucketProtocolService {
       }
     } catch (error: any) {
       console.error('Error opening position:', error.message);
+      
+      // Provide more helpful error messages
+      if (error.message.includes('InsufficientCollateral')) {
+        throw new Error('Insufficient collateral deposited');
+      }
+      if (error.message.includes('BucketNotFound')) {
+        throw new Error('Bucket not found - please create a bucket first');
+      }
+      if (error.message.includes('InvalidLeverage')) {
+        throw new Error('Invalid leverage selected');
+      }
+      
       throw error;
     }
   }

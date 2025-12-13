@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -28,12 +29,16 @@ interface Transaction {
 }
 
 export default function WalletScreen() {
+  const router = useRouter();
   const [walletAddress, setWalletAddress] = useState<string>('');
   const [balance, setBalance] = useState<string>('0.00');
   const [isLoading, setIsLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isWalletInitialized, setIsWalletInitialized] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<'latest' | 'oldest' | 'thisWeek'>('latest');
+  const [currentNetwork, setCurrentNetwork] = useState<'testnet' | 'mainnet'>('testnet');
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
 
   // Modals
   const [showSendModal, setShowSendModal] = useState(false);
@@ -52,6 +57,10 @@ export default function WalletScreen() {
       const walletData = await web3Service.initializeWallet();
       setWalletAddress(walletData.address);
       setIsWalletInitialized(true);
+      
+      // Load current network
+      const network = web3Service.getCurrentNetwork();
+      setCurrentNetwork(network);
       
       await loadWalletData();
     } catch (error) {
@@ -87,6 +96,27 @@ export default function WalletScreen() {
     Alert.alert('✓', 'Address copied to clipboard');
   };
 
+  const handleNetworkSwitch = async () => {
+    try {
+      setIsSwitchingNetwork(true);
+      const newNetwork = currentNetwork === 'testnet' ? 'mainnet' : 'testnet';
+      
+      await web3Service.switchNetwork(newNetwork);
+      setCurrentNetwork(newNetwork);
+      
+      // Reload wallet data with new network
+      await loadWalletData();
+      
+      const networkName = newNetwork === 'testnet' ? 'Monad Testnet' : 'Monad Mainnet';
+      Alert.alert('✓', `Switched to ${networkName}`);
+    } catch (error) {
+      console.error('Error switching network:', error);
+      Alert.alert('Error', 'Failed to switch network. Please try again.');
+    } finally {
+      setIsSwitchingNetwork(false);
+    }
+  };
+
   const handleSend = async () => {
     if (!sendToAddress || !sendAmount) {
       Alert.alert('Error', 'Please fill in all fields');
@@ -112,7 +142,7 @@ export default function WalletScreen() {
       setSendToAddress('');
       setSendAmount('');
       
-      const explorerUrl = `https://explorer.testnet.monad.xyz/tx/${txHash}`;
+      const explorerUrl = `https://monad-testnet.socialscan.io/tx/${txHash}`;
       
       Alert.alert(
         '✓ Transaction Sent',
@@ -147,6 +177,26 @@ export default function WalletScreen() {
     });
   };
 
+  const getFilteredTransactions = () => {
+    let filtered = [...transactions];
+    
+    if (activeFilter === 'latest') {
+      // Sort by timestamp descending (newest first)
+      filtered.sort((a, b) => b.timestamp - a.timestamp);
+    } else if (activeFilter === 'oldest') {
+      // Sort by timestamp ascending (oldest first)
+      filtered.sort((a, b) => a.timestamp - b.timestamp);
+    } else if (activeFilter === 'thisWeek') {
+      // Filter transactions from last 7 days
+      const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      filtered = filtered.filter(tx => tx.timestamp >= oneWeekAgo);
+      // Sort by timestamp descending (newest first)
+      filtered.sort((a, b) => b.timestamp - a.timestamp);
+    }
+    
+    return filtered;
+  };
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -174,10 +224,29 @@ export default function WalletScreen() {
             <Text style={styles.userName}>Riga Wallet</Text>
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerButton} 
+              onPress={handleNetworkSwitch}
+              disabled={isSwitchingNetwork}
+            >
+              <Ionicons 
+                name={currentNetwork === 'testnet' ? 'flask-outline' : 'globe-outline'} 
+                size={20} 
+                color={currentNetwork === 'testnet' ? '#F59E0B' : '#10B981'} 
+              />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.headerButton} onPress={() => copyToClipboard(walletAddress)}>
               <Ionicons name="copy-outline" size={20} color="#1F2937" />
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Network Badge */}
+        <View style={styles.networkBadge}>
+          <View style={[styles.networkDot, currentNetwork === 'mainnet' && styles.networkDotMainnet]} />
+          <Text style={styles.networkText}>
+            {currentNetwork === 'testnet' ? 'Monad Testnet' : 'Monad Mainnet'}
+          </Text>
         </View>
 
         {/* Balance Card */}
@@ -209,7 +278,7 @@ export default function WalletScreen() {
             <Text style={styles.actionLabel}>Receive</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/swap')}>
             <View style={styles.actionIconContainer}>
               <Ionicons name="swap-horizontal" size={24} color="#FFFFFF" />
             </View>
@@ -227,14 +296,23 @@ export default function WalletScreen() {
           </View>
 
           <View style={styles.transactionFilters}>
-            <TouchableOpacity style={[styles.filterButton, styles.filterActive]}>
-              <Text style={[styles.filterText, styles.filterTextActive]}>Latest</Text>
+            <TouchableOpacity 
+              style={[styles.filterButton, activeFilter === 'latest' && styles.filterActive]}
+              onPress={() => setActiveFilter('latest')}
+            >
+              <Text style={[styles.filterText, activeFilter === 'latest' && styles.filterTextActive]}>Latest</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.filterButton}>
-              <Text style={styles.filterText}>Oldest</Text>
+            <TouchableOpacity 
+              style={[styles.filterButton, activeFilter === 'oldest' && styles.filterActive]}
+              onPress={() => setActiveFilter('oldest')}
+            >
+              <Text style={[styles.filterText, activeFilter === 'oldest' && styles.filterTextActive]}>Oldest</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.filterButton}>
-              <Text style={styles.filterText}>This Week</Text>
+            <TouchableOpacity 
+              style={[styles.filterButton, activeFilter === 'thisWeek' && styles.filterActive]}
+              onPress={() => setActiveFilter('thisWeek')}
+            >
+              <Text style={[styles.filterText, activeFilter === 'thisWeek' && styles.filterTextActive]}>This Week</Text>
             </TouchableOpacity>
           </View>
 
@@ -243,13 +321,18 @@ export default function WalletScreen() {
               <Ionicons name="receipt-outline" size={48} color="#D1D5DB" />
               <Text style={styles.emptyText}>No transactions yet</Text>
             </View>
+          ) : getFilteredTransactions().length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="receipt-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.emptyText}>No transactions in this filter</Text>
+            </View>
           ) : (
-            transactions.map((tx, index) => (
+            getFilteredTransactions().map((tx, index) => (
               <TouchableOpacity
                 key={tx.hash + index}
                 style={styles.transactionItem}
                 onPress={() => {
-                  const url = `https://explorer.testnet.monad.xyz/tx/${tx.hash}`;
+                  const url = `https://monad-testnet.socialscan.io/tx/${tx.hash}`;
                   Linking.openURL(url);
                 }}
               >
@@ -484,6 +567,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#10B981',
     fontWeight: '600',
+  },
+  networkBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 16,
+    gap: 6,
+  },
+  networkDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F59E0B',
+  },
+  networkDotMainnet: {
+    backgroundColor: '#10B981',
+  },
+  networkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   actionButtons: {
     flexDirection: 'row',

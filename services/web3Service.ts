@@ -24,31 +24,55 @@ export const monadTestnet = defineChain({
     },
   },
   blockExplorers: {
-    default: { name: 'Monad Explorer', url: 'https://explorer.testnet.monad.xyz' },
+    default: { name: 'Monad Explorer', url: 'https://monad-testnet.socialscan.io' },
   },
   testnet: true,
 });
 
-// Monad Testnet Configuration using Viem
-export const MONAD_CONFIG = {
-  chain: monadTestnet,
-  rpcUrls: [
-    'https://testnet-rpc.monad.xyz',
-  ],
-};
-
-// Network configuration for ethers.js
-export const NETWORK_CONFIG = {
-  chainId: 10143,
-  name: 'Monad Testnet',
-  rpcUrl: MONAD_CONFIG.rpcUrls[0],
-  blockExplorerUrl: 'https://explorer.testnet.monad.xyz',
+// Monad Mainnet Chain Definition for Viem
+export const monadMainnet = defineChain({
+  id: 10141,
+  name: 'Monad Mainnet',
+  network: 'monad-mainnet',
   nativeCurrency: {
-    name: 'Monad',
-    symbol: 'MON', 
     decimals: 18,
+    name: 'Monad',
+    symbol: 'MON',
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://rpc.monad.xyz'],
+    },
+    public: {
+      http: ['https://rpc.monad.xyz'],
+    },
+  },
+  blockExplorers: {
+    default: { name: 'Monad Explorer', url: 'https://monad.socialscan.io' },
+  },
+  testnet: false,
+});
+
+// Network Configurations
+export const NETWORK_CONFIGS = {
+  testnet: {
+    chain: monadTestnet,
+    rpcUrls: ['https://testnet-rpc.monad.xyz'],
+    chainId: 10143,
+    name: 'Monad Testnet',
+    blockExplorerUrl: 'https://monad-testnet.socialscan.io',
+  },
+  mainnet: {
+    chain: monadMainnet,
+    rpcUrls: ['https://rpc.monad.xyz'],
+    chainId: 10141,
+    name: 'Monad Mainnet',
+    blockExplorerUrl: 'https://monad.socialscan.io',
   },
 };
+
+// Default to testnet (backwards compatibility)
+export const MONAD_CONFIG = NETWORK_CONFIGS.testnet;
 
 // Contract Addresses on Monad Testnet
 export const CONTRACT_ADDRESSES = {
@@ -63,12 +87,14 @@ export const STORAGE_KEYS = {
   PRIVATE_KEY: 'private_key',
   WALLET_NAME: 'wallet_name',
   TRANSACTION_HISTORY: 'transaction_history',
+  NETWORK_TYPE: 'network_type',
 };
 
 class Web3Service {
   private provider: ethers.JsonRpcProvider;
   private wallet: ethers.Wallet | null = null;
   private currentRpcIndex: number = 0;
+  private currentNetwork: 'testnet' | 'mainnet' = 'testnet';
   
   // Viem clients for better EVM chain support
   private publicClient: any;
@@ -79,18 +105,33 @@ class Web3Service {
   private initializationPromise: Promise<{ address: string; isNew: boolean }> | null = null;
 
   constructor() {
+    this.loadNetworkPreference();
     this.provider = this.initializeProvider();
     this.initializeViemClients();
   }
 
-  // Initialize Viem clients for Monad testnet
+  // Load saved network preference
+  private async loadNetworkPreference(): Promise<void> {
+    try {
+      const savedNetwork = await AsyncStorage.getItem(STORAGE_KEYS.NETWORK_TYPE);
+      if (savedNetwork === 'mainnet' || savedNetwork === 'testnet') {
+        this.currentNetwork = savedNetwork;
+        console.log('📡 Loaded network preference:', this.currentNetwork);
+      }
+    } catch (error) {
+      console.error('Error loading network preference:', error);
+    }
+  }
+
+  // Initialize Viem clients for current network
   private initializeViemClients(): void {
     try {
-      console.log('🌐 Initializing Viem clients for Monad Testnet...');
+      const config = NETWORK_CONFIGS[this.currentNetwork];
+      console.log('🌐 Initializing Viem clients for', config.name);
       
       this.publicClient = createPublicClient({
-        chain: monadTestnet,
-        transport: http(MONAD_CONFIG.rpcUrls[this.currentRpcIndex], {
+        chain: config.chain,
+        transport: http(config.rpcUrls[this.currentRpcIndex], {
           batch: true,
           fetchOptions: {
             timeout: 10000,
@@ -98,20 +139,21 @@ class Web3Service {
         }),
       });
       
-      console.log('✅ Viem public client initialized for Monad testnet');
+      console.log('✅ Viem public client initialized for', config.name);
     } catch (error: any) {
       console.error('❌ Failed to initialize Viem clients:', error.message);
     }
   }
 
-  // Update Viem clients when switching RPC endpoints
+  // Update Viem clients when switching RPC endpoints or networks
   private updateViemClients(): void {
     try {
-      const newRpcUrl = MONAD_CONFIG.rpcUrls[this.currentRpcIndex];
+      const config = NETWORK_CONFIGS[this.currentNetwork];
+      const newRpcUrl = config.rpcUrls[this.currentRpcIndex];
       console.log('🔄 Updating Viem clients to:', newRpcUrl);
       
       this.publicClient = createPublicClient({
-        chain: monadTestnet,
+        chain: config.chain,
         transport: http(newRpcUrl, {
           batch: true,
           fetchOptions: {
@@ -124,7 +166,7 @@ class Web3Service {
       if (this.viemAccount) {
         this.walletClient = createWalletClient({
           account: this.viemAccount,
-          chain: monadTestnet,
+          chain: config.chain,
           transport: http(newRpcUrl),
         });
       }
@@ -133,16 +175,17 @@ class Web3Service {
     }
   }
 
-  // Initialize provider with Monad testnet-optimized settings
+  // Initialize provider with current network settings
   private initializeProvider(): ethers.JsonRpcProvider {
-    const rpcUrl = MONAD_CONFIG.rpcUrls[this.currentRpcIndex];
-    console.log('🔗 Connecting to Monad Testnet RPC:', rpcUrl);
+    const config = NETWORK_CONFIGS[this.currentNetwork];
+    const rpcUrl = config.rpcUrls[this.currentRpcIndex];
+    console.log('🔗 Connecting to', config.name, 'RPC:', rpcUrl);
     
     const provider = new ethers.JsonRpcProvider(rpcUrl, {
-      chainId: NETWORK_CONFIG.chainId,
-      name: NETWORK_CONFIG.name,
+      chainId: config.chainId,
+      name: config.name,
     }, {
-      // Optimize for Monad testnet performance
+      // Optimize for Monad performance
       polling: true,
       pollingInterval: 1000, // 1 second for Monad's high-speed blocks
       batchMaxCount: 1,
@@ -565,9 +608,10 @@ class Web3Service {
         // Save to transaction history with full details
         await this.saveTransaction(
           receipt.hash,
-          'MON Transfer', 
+          'sent', 
           amount, 
-          to
+          to,
+          'confirmed'
         );
         
         return receipt.hash;
@@ -596,7 +640,8 @@ class Web3Service {
     hash: string,
     type: string,
     amount: string,
-    to: string
+    to: string,
+    status: string = 'confirmed'
   ): Promise<void> {
     try {
       const history = await this.getTransactionHistory();
@@ -606,7 +651,7 @@ class Web3Service {
         amount,
         to,
         timestamp: Date.now(),
-        status: 'pending',
+        status,
       };
       
       history.unshift(newTransaction);
@@ -631,6 +676,55 @@ class Web3Service {
     
     console.log('📄 Creating contract instance for:', contractAddress);
     return new ethers.Contract(contractAddress, abi, this.wallet);
+  }
+
+  // Get current network type
+  getCurrentNetwork(): 'testnet' | 'mainnet' {
+    return this.currentNetwork;
+  }
+
+  // Get current network config
+  getCurrentNetworkConfig() {
+    const config = NETWORK_CONFIGS[this.currentNetwork];
+    return {
+      type: this.currentNetwork,
+      name: config.name,
+      chainId: config.chainId,
+      rpcUrl: config.rpcUrls[this.currentRpcIndex],
+      blockExplorerUrl: config.blockExplorerUrl,
+    };
+  }
+
+  // Switch network between testnet and mainnet
+  async switchNetwork(networkType: 'testnet' | 'mainnet'): Promise<void> {
+    try {
+      if (this.currentNetwork === networkType) {
+        console.log('Already on', networkType);
+        return;
+      }
+
+      console.log('🔄 Switching network from', this.currentNetwork, 'to', networkType);
+      this.currentNetwork = networkType;
+      this.currentRpcIndex = 0;
+
+      // Save network preference
+      await AsyncStorage.setItem(STORAGE_KEYS.NETWORK_TYPE, networkType);
+
+      // Reinitialize provider and clients with new network
+      this.provider = this.initializeProvider();
+      this.initializeViemClients();
+
+      // Reconnect wallet if already initialized
+      if (this.wallet) {
+        this.wallet = this.wallet.connect(this.provider);
+        console.log('✅ Wallet reconnected to', networkType);
+      }
+
+      console.log('✅ Network switched to', networkType);
+    } catch (error) {
+      console.error('❌ Failed to switch network:', error);
+      throw error;
+    }
   }
 
   // Reset wallet (for development)
