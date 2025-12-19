@@ -4,7 +4,6 @@ import {
     ActivityIndicator,
     Alert,
     Linking,
-    SafeAreaView,
     ScrollView,
     StyleSheet,
     Text,
@@ -13,6 +12,7 @@ import {
     View,
     PanResponder,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { crescaBucketProtocolService } from '../services/contractServices';
 import { web3Service } from '../services/web3Service';
 import { priceService, BundlePrice } from '../services/priceService';
@@ -137,7 +137,7 @@ export default function BundlesScreen() {
         investmentAmount
       );
       
-      const explorerUrl = `https://explorer.testnet.monad.xyz/tx/${txHash}`;
+      const explorerUrl = `https://monad-testnet.socialscan.io/tx/${txHash}`;
       
       Alert.alert(
         '✓ Trade Executed',

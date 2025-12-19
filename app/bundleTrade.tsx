@@ -5,7 +5,6 @@ import {
     ActivityIndicator,
     Alert,
     Linking,
-    SafeAreaView,
     ScrollView,
     StyleSheet,
     Text,
@@ -14,6 +13,7 @@ import {
     View,
     PanResponder,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { crescaBucketProtocolService } from '../services/contractServices';
 import { web3Service } from '../services/web3Service';
 import { priceService, BundlePrice } from '../services/priceService';
@@ -290,6 +290,75 @@ export default function BundleTradeScreen() {
         {/* Leverage Slider */}
         {renderLeverageSlider()}
 
+        {/* Position Direction */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Position Direction</Text>
+          <View style={styles.positionButtons}>
+            <TouchableOpacity
+              style={[
+                styles.positionButton,
+                styles.longButton,
+                positionType === 'long' && styles.positionButtonActive
+              ]}
+              onPress={() => setPositionType('long')}
+            >
+              <Ionicons name="trending-up" size={20} color="#FFFFFF" />
+              <Text style={styles.positionButtonText}>LONG</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.positionButton,
+                styles.shortButton,
+                positionType === 'short' && styles.positionButtonActive
+              ]}
+              onPress={() => setPositionType('short')}
+            >
+              <Ionicons name="trending-down" size={20} color="#EF4444" />
+              <Text style={[styles.positionButtonText, styles.shortButtonText]}>SHORT</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.hint}>
+            Profit when bundle price {positionType === 'long' ? 'increases' : 'decreases'}
+          </Text>
+        </View>
+
+        {/* Transaction Summary */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Transaction Summary</Text>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Investment</Text>
+            <Text style={styles.summaryValue}>{investmentAmount || '0'} MON</Text>
+          </View>
+
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Leverage</Text>
+            <Text style={styles.summaryValue}>{leverage}x</Text>
+          </View>
+
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Position</Text>
+            <Text style={[
+              styles.summaryValue,
+              positionType === 'long' ? styles.longText : styles.shortText
+            ]}>
+              {positionType.toUpperCase()}
+            </Text>
+          </View>
+
+          <View style={styles.summaryDivider} />
+
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabelBold}>Total Exposure</Text>
+            <Text style={styles.summaryValueBold}>
+              {investmentAmount && !isNaN(parseFloat(investmentAmount))
+                ? (parseFloat(investmentAmount) * leverage).toFixed(2)
+                : '0.00'} MON
+            </Text>
+          </View>
+        </View>
+
         {/* Execute Button */}
         <TouchableOpacity
           style={styles.executeButton}
@@ -542,6 +611,92 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#92400E',
     lineHeight: 18,
+  },
+  positionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  positionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  longButton: {
+    borderColor: '#10B981',
+  },
+  shortButton: {
+    borderColor: '#E5E7EB',
+  },
+  positionButtonActive: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  positionButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  shortButtonText: {
+    color: '#EF4444',
+  },
+  longText: {
+    color: '#10B981',
+  },
+  shortText: {
+    color: '#EF4444',
+  },
+  summaryCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  summaryTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  summaryLabelBold: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  summaryValueBold: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#6C5CE7',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 10,
   },
   executeButton: {
     flexDirection: 'row',
