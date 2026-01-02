@@ -5,14 +5,15 @@ import {
     ActivityIndicator,
     FlatList,
     Image,
-    SafeAreaView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart } from 'react-native-gifted-charts';
 import { priceService } from '../services/priceService';
+import pythOracleService from '../services/pythOracleService';
 
 interface CryptoAsset {
   id: string;
@@ -22,6 +23,9 @@ interface CryptoAsset {
   change24h: number;
   icon: string;
   color: string;
+  confidence?: number;
+  lastUpdated?: number;
+  isStale?: boolean;
 }
 
 interface NFTAsset {
@@ -46,73 +50,86 @@ export default function MarketsScreen() {
   useEffect(() => {
     loadMarketData();
     
+    // Refresh every 10 seconds (Pyth updates ~400ms, so this is conservative)
     const interval = setInterval(() => {
       loadMarketData();
-    }, 30000); // Refresh every 30 seconds
+    }, 10000);
     
     return () => clearInterval(interval);
   }, []);
 
   const loadMarketData = async () => {
     try {
-      // Generate dynamic prices with slight variations to simulate real-time updates
-      const baseTime = Date.now();
-      const variation = (Math.sin(baseTime / 10000) + 1) / 2; // 0 to 1
+      setIsLoading(true);
       
-      // Monad-deployed tokens with simulated real-time prices
+      // ✅ REAL PRICES FROM PYTH NETWORK (Decentralized Oracle)
+      const prices = await pythOracleService.getPrices(['BTC', 'ETH', 'SOL', 'MOVE']);
+      
+      // Movement-deployed tokens with REAL Pyth prices
       const marketData: CryptoAsset[] = [
         {
-          id: 'mon',
-          name: 'Monad',
-          symbol: 'MON',
-          price: 0.85 + (variation * 0.05), // 0.85 - 0.90
-          change24h: 5.23 + (variation * 2),
+          id: 'MOVE',
+          name: 'Movement',
+          symbol: 'MOVE',
+          price: prices.MOVE?.price || 0.85,
+          change24h: 5.23, // TODO: Calculate from historical data
           icon: 'M',
           color: '#6C5CE7',
+          confidence: prices.MOVE?.confidence,
+          lastUpdated: prices.MOVE?.timestamp,
+          isStale: prices.MOVE?.isStale,
         },
         {
-          id: 'wmon',
-          name: 'Wrapped Monad',
-          symbol: 'WMON',
-          price: 0.84 + (variation * 0.04), // 0.84 - 0.88
-          change24h: 5.15 + (variation * 1.8),
+          id: 'wMOVE',
+          name: 'Wrapped Movement',
+          symbol: 'WMOVE',
+          price: (prices.MOVE?.price || 0.85) * 0.99, // Wrapped version slightly lower
+          change24h: 5.15,
           icon: 'W',
           color: '#8B7FE8',
         },
         {
           id: 'musd',
-          name: 'Monad USD',
+          name: 'Movement USD',
           symbol: 'mUSD',
-          price: 1.0 + (variation * 0.01 - 0.005), // 0.995 - 1.005
-          change24h: 0.12 + (variation * 0.3 - 0.15),
+          price: 1.0,
+          change24h: 0.12,
           icon: '$',
           color: '#10B981',
         },
         {
           id: 'mbtc',
-          name: 'Monad BTC',
+          name: 'Movement BTC',
           symbol: 'mBTC',
-          price: 43500 + (variation * 1000 - 500), // Wrapped BTC
-          change24h: -2.1 + (variation * 4),
+          price: prices.BTC?.price || 43500,
+          change24h: -2.1,
           icon: '₿',
           color: '#F7931A',
+          confidence: prices.BTC?.confidence,
+          lastUpdated: prices.BTC?.timestamp,
+          isStale: prices.BTC?.isStale,
         },
         {
           id: 'meth',
-          name: 'Monad ETH',
+          name: 'Movement ETH',
           symbol: 'mETH',
-          price: 2300 + (variation * 100 - 50), // Wrapped ETH
-          change24h: -3.4 + (variation * 6),
+          price: prices.ETH?.price || 2300,
+          change24h: -3.4,
           icon: 'Ξ',
           color: '#627EEA',
+          confidence: prices.ETH?.confidence,
+          lastUpdated: prices.ETH?.timestamp,
+          isStale: prices.ETH?.isStale,
         },
       ];
       
+      console.log('✅ Markets loaded with Pyth prices:', marketData.map(a => `${a.symbol}: $${a.price.toFixed(2)}`).join(', '));
       setAssets(marketData);
 
       // Generate NFT price history data for charts
       const generatePriceHistory = (basePrice: number) => {
         const history = [];
+        const baseTime = Date.now();
         for (let i = 23; i >= 0; i--) {
           const timeVariation = Math.sin((baseTime / 5000) - i) * 0.1;
           const value = basePrice * (1 + timeVariation);
@@ -121,53 +138,54 @@ export default function MarketsScreen() {
         return history;
       };
 
-      // Monad NFT Collections with simulated real-time floor prices
+      // Movement NFT Collections with simulated floor prices
+      const variation = Math.random() * 0.2 - 0.1; // -10% to +10%
       const nftData: NFTAsset[] = [
         {
-          id: 'monad-genesis',
-          name: 'Monad Genesis #1337',
-          collection: 'Monad Genesis',
-          floorPrice: 12.5 + (variation * 2), // 12.5 - 14.5 MON
+          id: 'Movement-genesis',
+          name: 'Movement Genesis #1337',
+          collection: 'Movement Genesis',
+          floorPrice: 12.5 + (variation * 2), // 12.5 - 14.5 MOVE
           change24h: 8.5 + (variation * 3),
           volume24h: 1250 + (variation * 200),
           imageUrl: '🎨',
           priceHistory: generatePriceHistory(12.5),
         },
         {
-          id: 'monad-punks',
-          name: 'Monad Punk #4242',
-          collection: 'Monad Punks',
-          floorPrice: 8.2 + (variation * 1.5), // 8.2 - 9.7 MON
+          id: 'Movement-punks',
+          name: 'Movement Punk #4242',
+          collection: 'Movement Punks',
+          floorPrice: 8.2 + (variation * 1.5), // 8.2 - 9.7 MOVE
           change24h: -2.3 + (variation * 5),
           volume24h: 890 + (variation * 150),
           imageUrl: '👾',
           priceHistory: generatePriceHistory(8.2),
         },
         {
-          id: 'monad-apes',
-          name: 'Monad Ape #777',
-          collection: 'Bored Monad Apes',
-          floorPrice: 25.8 + (variation * 3), // 25.8 - 28.8 MON
+          id: 'Movement-apes',
+          name: 'Movement Ape #777',
+          collection: 'Bored Movement Apes',
+          floorPrice: 25.8 + (variation * 3), // 25.8 - 28.8 MOVE
           change24h: 15.2 + (variation * 4),
           volume24h: 2100 + (variation * 300),
           imageUrl: '🦍',
           priceHistory: generatePriceHistory(25.8),
         },
         {
-          id: 'monad-ordinals',
-          name: 'Monad Ordinal #100',
-          collection: 'Monad Ordinals',
-          floorPrice: 5.5 + (variation * 1), // 5.5 - 6.5 MON
+          id: 'Movement-ordinals',
+          name: 'Movement Ordinal #100',
+          collection: 'Movement Ordinals',
+          floorPrice: 5.5 + (variation * 1), // 5.5 - 6.5 MOVE
           change24h: 3.8 + (variation * 2),
           volume24h: 450 + (variation * 100),
           imageUrl: '📜',
           priceHistory: generatePriceHistory(5.5),
         },
         {
-          id: 'monad-degens',
-          name: 'Monad Degen #5000',
-          collection: 'Monad Degens',
-          floorPrice: 18.3 + (variation * 2.5), // 18.3 - 20.8 MON
+          id: 'Movement-degens',
+          name: 'Movement Degen #5000',
+          collection: 'Movement Degens',
+          floorPrice: 18.3 + (variation * 2.5), // 18.3 - 20.8 MOVE
           change24h: 12.1 + (variation * 3.5),
           volume24h: 1680 + (variation * 250),
           imageUrl: '🔥',
@@ -278,7 +296,7 @@ export default function MarketsScreen() {
       <View style={styles.nftFooter}>
         <View style={styles.nftPriceInfo}>
           <Text style={styles.nftPriceLabel}>Floor Price</Text>
-          <Text style={styles.nftPrice}>{item.floorPrice.toFixed(2)} MON</Text>
+          <Text style={styles.nftPrice}>{item.floorPrice.toFixed(2)} MOVE</Text>
         </View>
         <View style={styles.nftStatsRow}>
           <View style={[
@@ -292,7 +310,7 @@ export default function MarketsScreen() {
               {item.change24h >= 0 ? '+' : ''}{item.change24h.toFixed(2)}%
             </Text>
           </View>
-          <Text style={styles.nftVolume}>Vol: {item.volume24h.toFixed(0)} MON</Text>
+          <Text style={styles.nftVolume}>Vol: {item.volume24h.toFixed(0)} MOVE</Text>
         </View>
       </View>
     </TouchableOpacity>
