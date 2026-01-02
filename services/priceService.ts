@@ -1,13 +1,17 @@
 /**
  * Price Service - Fetches real-time crypto prices
- * Supports: CoinGecko (primary), Binance (fallback)
+ * Priority: Pyth Network (decentralized), CoinGecko (fallback), Binance (last resort)
  */
+
+import pythOracleService from './pythOracleService';
 
 interface PriceData {
   symbol: string;
   price: number;
   change24h: number;
   lastUpdated: number;
+  confidence?: number;
+  isStale?: boolean;
 }
 
 interface BundlePrice {
@@ -104,13 +108,24 @@ class PriceService {
 
   /**
    * Get bundle prices (BTC 50%, ETH 30%, SOL 20%)
+   * NOW USES PYTH ORACLE AS PRIMARY SOURCE
    */
   async getBundlePrices(): Promise<BundlePrice> {
     try {
+      // Try Pyth Network first (decentralized, real-time, FREE)
+      try {
+        console.log('🔮 Fetching bundle prices from Pyth Network...');
+        const pythPrices = await pythOracleService.getBundlePrices();
+        console.log('✅ Using Pyth Network prices (decentralized oracle)');
+        return pythPrices;
+      } catch (pythError) {
+        console.warn('⚠️ Pyth Network failed, falling back to CoinGecko:', pythError);
+      }
+
+      // Fallback to CoinGecko
       const symbols = ['BTC', 'ETH', 'SOL'];
       let prices: Map<string, PriceData>;
 
-      // Try CoinGecko first, fallback to Binance
       try {
         prices = await this.fetchFromCoinGecko(symbols);
       } catch (error) {
@@ -148,6 +163,7 @@ class PriceService {
 
   /**
    * Get single asset price with caching
+   * NOW USES PYTH ORACLE AS PRIMARY SOURCE
    */
   async getPrice(symbol: string): Promise<number> {
     const cached = this.cache.get(symbol);
@@ -155,6 +171,19 @@ class PriceService {
       return cached.price;
     }
 
+    // Try Pyth Network first (decentralized, real-time)
+    try {
+      const pythPrice = await pythOracleService.getPrice(symbol);
+      if (pythPrice && !pythPrice.isStale) {
+        console.log(`✅ Using Pyth price for ${symbol}: $${pythPrice.price.toFixed(2)}`);
+        this.cache.set(symbol, { price: pythPrice.price, timestamp: Date.now() });
+        return pythPrice.price;
+      }
+    } catch (pythError) {
+      console.warn(`⚠️ Pyth failed for ${symbol}, falling back to CoinGecko`);
+    }
+
+    // Fallback to CoinGecko
     try {
       const prices = await this.fetchFromCoinGecko([symbol]);
       const priceData = prices.get(symbol.toUpperCase());
@@ -174,7 +203,7 @@ class PriceService {
           return priceData.price;
         }
       } catch (binanceError) {
-        console.error('Both price sources failed');
+        console.error('All price sources failed');
       }
     }
 
