@@ -244,24 +244,25 @@ class MovementService {
   }
 
   /**
-   * Send payment with memo
+   * Send payment (uses wallet module since payments module not deployed)
+   * Note: Memo is ignored - wallet::send_coins doesn't support memos
    */
   async sendPayment(
     recipientAddress: string,
     amount: string,
-    memo: string
+    memo: string = ''
   ): Promise<string> {
     if (!this.account) throw new Error('Wallet not initialized');
 
     try {
       const amountInOctas = Math.floor(parseFloat(amount) * 100000000);
-      const memoBytes = Array.from(Buffer.from(memo, 'utf8'));
 
+      // Use wallet module's send_coins (no memo support)
       const payload: Types.TransactionPayload = {
         type: 'entry_function_payload',
-        function: `${CONTRACT_ADDRESS}::payments::send_payment`,
+        function: `${MODULES.WALLET}::send_coins`,
         type_arguments: [],
-        arguments: [recipientAddress, amountInOctas.toString(), memoBytes],
+        arguments: [recipientAddress, amountInOctas.toString()],
       };
 
       const txnRequest = await this.client.generateTransaction(
@@ -281,7 +282,7 @@ class MovementService {
   }
 
   /**
-   * Tap to pay (quick payment)
+   * Tap to pay (quick payment using wallet module)
    */
   async tapToPay(recipientAddress: string, amount: string): Promise<string> {
     if (!this.account) throw new Error('Wallet not initialized');
@@ -289,9 +290,10 @@ class MovementService {
     try {
       const amountInOctas = Math.floor(parseFloat(amount) * 100000000);
 
+      // Use wallet module instead of payments
       const payload: Types.TransactionPayload = {
         type: 'entry_function_payload',
-        function: `${CONTRACT_ADDRESS}::payments::tap_to_pay`,
+        function: `${MODULES.WALLET}::send_coins`,
         type_arguments: [],
         arguments: [recipientAddress, amountInOctas.toString()],
       };
