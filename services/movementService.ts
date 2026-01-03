@@ -244,8 +244,8 @@ class MovementService {
   }
 
   /**
-   * Send payment (uses wallet module since payments module not deployed)
-   * Note: Memo is ignored - wallet::send_coins doesn't support memos
+   * Send payment using native Aptos coin transfer
+   * The custom wallet module is not deployed, so use Aptos framework instead
    */
   async sendPayment(
     recipientAddress: string,
@@ -257,11 +257,11 @@ class MovementService {
     try {
       const amountInOctas = Math.floor(parseFloat(amount) * 100000000);
 
-      // Use wallet module's send_coins (no memo support)
+      // Use native Aptos framework coin transfer (works without custom contracts)
       const payload: Types.TransactionPayload = {
         type: 'entry_function_payload',
-        function: `${MODULES.WALLET}::send_coins`,
-        type_arguments: [],
+        function: '0x1::coin::transfer',
+        type_arguments: ['0x1::aptos_coin::AptosCoin'],
         arguments: [recipientAddress, amountInOctas.toString()],
       };
 
@@ -273,7 +273,7 @@ class MovementService {
       const txnResult = await this.client.submitTransaction(signedTxn);
       await this.client.waitForTransaction(txnResult.hash);
 
-      console.log('✅ Payment sent:', txnResult.hash);
+      console.log('✅ Payment sent via Aptos framework:', txnResult.hash);
       return txnResult.hash;
     } catch (error) {
       console.error('❌ Error sending payment:', error);
@@ -282,7 +282,7 @@ class MovementService {
   }
 
   /**
-   * Tap to pay (quick payment using wallet module)
+   * Tap to pay using native Aptos coin transfer
    */
   async tapToPay(recipientAddress: string, amount: string): Promise<string> {
     if (!this.account) throw new Error('Wallet not initialized');
@@ -290,11 +290,11 @@ class MovementService {
     try {
       const amountInOctas = Math.floor(parseFloat(amount) * 100000000);
 
-      // Use wallet module instead of payments
+      // Use native Aptos framework coin transfer
       const payload: Types.TransactionPayload = {
         type: 'entry_function_payload',
-        function: `${MODULES.WALLET}::send_coins`,
-        type_arguments: [],
+        function: '0x1::coin::transfer',
+        type_arguments: ['0x1::aptos_coin::AptosCoin'],
         arguments: [recipientAddress, amountInOctas.toString()],
       };
 
