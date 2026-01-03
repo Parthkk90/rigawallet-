@@ -244,8 +244,41 @@ class MovementService {
   }
 
   /**
+   * Get transaction details from blockchain
+   */
+  async getTransactionDetails(txHash: string): Promise<any> {
+    try {
+      const txn = await this.client.getTransactionByHash(txHash);
+      console.log('📝 Transaction details:', JSON.stringify(txn, null, 2));
+      return txn;
+    } catch (error) {
+      console.error('❌ Error getting transaction:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure coin is registered for recipient
+   */
+  private async ensureCoinRegistered(address: string): Promise<void> {
+    try {
+      await this.client.getAccountResource(
+        address,
+        '0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>'
+      );
+      // If we get here, coin is already registered
+    } catch (error: any) {
+      if (error?.status === 404 || error?.message?.includes('not found')) {
+        console.log('⚠️ Recipient account does not exist or coin not registered');
+        throw new Error('Recipient address does not exist on Movement Network. They need to create an account first.');
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Send payment using native Aptos coin transfer
-   * The custom wallet module is not deployed, so use Aptos framework instead
+   * Uses Aptos framework's coin transfer which properly debits/credits accounts
    */
   async sendPayment(
     recipientAddress: string,
@@ -255,9 +288,19 @@ class MovementService {
     if (!this.account) throw new Error('Wallet not initialized');
 
     try {
+      // Validate recipient account exists
+      await this.ensureCoinRegistered(recipientAddress);
+
       const amountInOctas = Math.floor(parseFloat(amount) * 100000000);
 
-      // Use native Aptos framework coin transfer (works without custom contracts)
+      // Check sender has sufficient balance
+      const balanceStr = await this.getBalance();
+      const balance = parseFloat(balanceStr);
+      if (balance < parseFloat(amount)) {
+        throw new Error(`Insufficient balance. You have ${balance} MOVE but trying to send ${amount} MOVE`);
+      }
+
+      // Use native Aptos framework coin transfer (properly transfers coins)
       const payload: Types.TransactionPayload = {
         type: 'entry_function_payload',
         function: '0x1::coin::transfer',
@@ -267,7 +310,11 @@ class MovementService {
 
       const txnRequest = await this.client.generateTransaction(
         this.account.address(),
-        payload
+        payload,
+        {
+          max_gas_amount: '200000',
+          gas_unit_price: '100',
+        }
       );
       const signedTxn = await this.client.signTransaction(this.account, txnRequest);
       const txnResult = await this.client.submitTransaction(signedTxn);
@@ -282,12 +329,28 @@ class MovementService {
         amount: parseFloat(amount),
         memo: memo || 'Payment sent',
         timestamp: Date.now(),
+        success: true,
       });
 
       console.log('✅ Payment sent via Aptos framework:', txnResult.hash);
+      console.log(`💸 Transferred ${amount} MOVE to ${recipientAddress.substring(0, 10)}...`);
       return txnResult.hash;
-    } catch (error) {
-      console.error('❌ Error sending payment:', error);
+    } catch (error: any) {
+      console.error('❌ Error sending payment:', error?.message || error);
+      
+      // Save failed transaction to history
+      await this.saveTransactionToHistory({
+        hash: 'failed',
+        type: 'sent',
+        from: this.account.address().hex(),
+        to: recipientAddress,
+        amount: parseFloat(amount),
+        memo: memo || 'Payment failed',
+        timestamp: Date.now(),
+        success: false,
+        error: error?.message || 'Transaction failed',
+      });
+      
       throw error;
     }
   }
