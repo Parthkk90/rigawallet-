@@ -173,6 +173,8 @@ class MovementService {
 
   /**
    * Initialize payment history using deployed contract
+   * NOTE: Payments module initialization may fail if contract not fully deployed
+   * This is optional - the app works without it
    */
   async initializePayments(): Promise<string> {
     if (!this.account) {
@@ -205,7 +207,7 @@ class MovementService {
       console.log('✅ Payment history initialized:', txnResult.hash);
       return txnResult.hash;
     } catch (error: any) {
-      // Handle common errors gracefully
+      // Handle common errors gracefully - payments module is OPTIONAL
       if (error?.message?.includes('RESOURCE_ALREADY_EXISTS')) {
         console.log('ℹ️ Payment history already initialized');
         return '';
@@ -214,8 +216,12 @@ class MovementService {
         console.log('ℹ️ Movement Network API unavailable - skipping initialization');
         return '';
       }
+      if (error?.message?.includes("doesn't exist")) {
+        console.log('⚠️ Payments module not available - app will work without it');
+        return '';
+      }
       console.error('❌ Error initializing payments:', error?.message || error);
-      // Don't throw - gracefully continue
+      // Don't throw - gracefully continue without payments
       return '';
     }
   }
