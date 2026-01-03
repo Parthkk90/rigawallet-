@@ -259,6 +259,7 @@ class MovementService {
 
   /**
    * Ensure coin is registered for recipient
+   * Checks if recipient has CoinStore registered for AptosCoin
    */
   private async ensureCoinRegistered(address: string): Promise<void> {
     try {
@@ -267,10 +268,19 @@ class MovementService {
         '0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>'
       );
       // If we get here, coin is already registered
+      console.log('✅ Recipient has AptosCoin registered');
     } catch (error: any) {
-      if (error?.status === 404 || error?.message?.includes('not found')) {
-        console.log('⚠️ Recipient account does not exist or coin not registered');
-        throw new Error('Recipient address does not exist on Movement Network. They need to create an account first.');
+      if (error?.status === 404 || error?.message?.includes('Resource not found')) {
+        console.log('❌ Recipient has not registered AptosCoin');
+        throw new Error(
+          `Cannot send to ${address.substring(0, 10)}...\n\n` +
+          'This address has not registered AptosCoin (MOVE token).\n\n' +
+          'The recipient must:\n' +
+          '1. Create a wallet on Movement Network\n' +
+          '2. Fund it from the faucet (this auto-registers coins)\n' +
+          '3. Or manually register coin: 0x1::managed_coin::register<0x1::aptos_coin::AptosCoin>()\n\n' +
+          'You cannot send to an address that has never been used on Movement Network.'
+        );
       }
       throw error;
     }
