@@ -273,6 +273,17 @@ class MovementService {
       const txnResult = await this.client.submitTransaction(signedTxn);
       await this.client.waitForTransaction(txnResult.hash);
 
+      // Save transaction to local history
+      await this.saveTransactionToHistory({
+        hash: txnResult.hash,
+        type: 'sent',
+        from: this.account.address().hex(),
+        to: recipientAddress,
+        amount: parseFloat(amount),
+        memo: memo || 'Payment sent',
+        timestamp: Date.now(),
+      });
+
       console.log('✅ Payment sent via Aptos framework:', txnResult.hash);
       return txnResult.hash;
     } catch (error) {
@@ -663,53 +674,49 @@ class MovementService {
   }
 
   /**
-   * Get transaction history from payment events
+   * Save transaction to local history
+   */
+  private async saveTransactionToHistory(transaction: any): Promise<void> {
+    try {
+      const historyKey = `${STORAGE_KEYS.TRANSACTION_HISTORY}_${this.account?.address().hex()}`;
+      const existingHistory = await AsyncStorage.getItem(historyKey);
+      const history = existingHistory ? JSON.parse(existingHistory) : [];
+      
+      // Add new transaction at the beginning
+      history.unshift(transaction);
+      
+      // Keep only last 100 transactions
+      const trimmedHistory = history.slice(0, 100);
+      
+      await AsyncStorage.setItem(historyKey, JSON.stringify(trimmedHistory));
+    } catch (error) {
+      console.error('⚠️ Error saving transaction history:', error);
+    }
+  }
+
+  /**
+   * Get transaction history from local storage
    */
   async getTransactionHistory(limit: number = 10): Promise<any[]> {
     try {
       if (!this.account) return [];
 
-      // Check if payments are initialized first
-      const isInit = await this.isPaymentInitialized(this.account.address().hex());
-      if (!isInit) {
-        console.log('ℹ️ Payment history not initialized - no transactions available');
-        return [];
-      }
-
-      // Get sent payment count
-      const [sentCount] = await this.client.view({
-        function: `${MODULES.PAYMENTS}::get_sent_payments_count`,
-        type_arguments: [],
-        arguments: [this.account.address().hex()],
-      });
-
-      // Get received payment count  
-      const [receivedCount] = await this.client.view({
-        function: `${MODULES.PAYMENTS}::get_received_payments_count`,
-        type_arguments: [],
-        arguments: [this.account.address().hex()],
-      });
-
-      console.log(`📊 Payment stats - Sent: ${sentCount}, Received: ${receivedCount}`);
+      // Get from local storage
+      const historyKey = `${STORAGE_KEYS.TRANSACTION_HISTORY}_${this.account.address().hex()}`;
+      const storedHistory = await AsyncStorage.getItem(historyKey);
       
-      // Return basic stats (full history requires event queries)
-      return [
-        {
-          type: 'summary',
-          sentCount: Number(sentCount),
-          receivedCount: Number(receivedCount),
-        }
-      ];
+      if (!storedHistory) {
+        console.log('ℹ️ No transaction history found');
+        return [];
+      }
+
+      const history = JSON.parse(storedHistory);
+      const recentHistory = history.slice(0, limit);
+      
+      console.log(`✅ Loaded ${recentHistory.length} transactions from history`);
+      return recentHistory;
     } catch (error: any) {
-      if (error?.message?.includes('JSON Parse')) {
-        console.log('ℹ️ Movement Network API unavailable');
-        return [];
-      }
-      if (error?.message?.includes('resource_not_found')) {
-        console.log('ℹ️ Payment history not initialized yet');
-        return [];
-      }
-      console.error('❌ Error getting transaction history:', error?.message || error);
+      console.error('❌ Error loading transaction history:', error);
       return [];
     }
   }
