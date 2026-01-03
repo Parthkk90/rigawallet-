@@ -3,19 +3,27 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Buffer } from 'buffer';
 
-// Movement Network Configuration
+// Movement Network Configuration (Bardock Testnet)
 export const MOVEMENT_CONFIG = {
   testnet: {
     rpcUrl: 'https://testnet.movementnetwork.xyz/v1',
     faucetUrl: 'https://faucet.testnet.movementnetwork.xyz',
+    indexerUrl: 'https://hasura.testnet.movementnetwork.xyz/v1/graphql',
     chainId: 250,
-    name: 'Movement Testnet',
-    explorerUrl: 'https://explorer.testnet.movementnetwork.xyz',
+    name: 'Movement Testnet (Bardock)',
+    explorerUrl: 'https://explorer.movementnetwork.xyz/?network=bardock+testnet',
   },
 };
 
-// Contract Address on Movement Testnet
+// Contract Address on Movement Testnet (Deployed December 31, 2025)
 export const CONTRACT_ADDRESS = '0x3aa36fb1c8226096d5216f0c5b45bd24b3b37cc55a7e68cdfd2762c5f82e3796';
+
+// Deployed Modules
+export const MODULES = {
+  WALLET: `${CONTRACT_ADDRESS}::wallet`,
+  PAYMENTS: `${CONTRACT_ADDRESS}::payments`,
+  BUCKET_PROTOCOL: `${CONTRACT_ADDRESS}::bucket_protocol`,
+};
 
 // Storage Keys
 export const STORAGE_KEYS = {
@@ -164,12 +172,69 @@ class MovementService {
   // ==================== Payments Module ====================
 
   /**
-   * Initialize payment history (graceful fallback)
+   * Initialize payment history using deployed contract
    */
   async initializePayments(): Promise<string> {
-    // Skip initialization - contracts not deployed yet
-    console.log('ℹ️ Payment contract not deployed - skipping initialization');
-    return '';
+    if (!this.account) {
+      throw new Error('Wallet not initialized - call initializeWallet() first');
+    }
+
+    try {
+      // Check if already initialized first
+      const isInit = await this.isPaymentInitialized(this.account.address().hex());
+      if (isInit) {
+        console.log('ℹ️ Payment history already initialized');
+        return '';
+      }
+
+      const payload: Types.TransactionPayload = {
+        type: 'entry_function_payload',
+        function: `${MODULES.PAYMENTS}::initialize`,
+        type_arguments: [],
+        arguments: [],
+      };
+
+      const txnRequest = await this.client.generateTransaction(
+        this.account.address(),
+        payload
+      );
+      const signedTxn = await this.client.signTransaction(this.account, txnRequest);
+      const txnResult = await this.client.submitTransaction(signedTxn);
+      await this.client.waitForTransaction(txnResult.hash);
+
+      console.log('✅ Payment history initialized:', txnResult.hash);
+      return txnResult.hash;
+    } catch (error: any) {
+      // Handle common errors gracefully
+      if (error?.message?.includes('RESOURCE_ALREADY_EXISTS')) {
+        console.log('ℹ️ Payment history already initialized');
+        return '';
+      }
+      if (error?.message?.includes('JSON Parse')) {
+        console.log('ℹ️ Movement Network API unavailable - skipping initialization');
+        return '';
+      }
+      console.error('❌ Error initializing payments:', error?.message || error);
+      // Don't throw - gracefully continue
+      return '';
+    }
+  }
+
+  /**
+   * Check if payment history is initialized
+   */
+  async isPaymentInitialized(address: string): Promise<boolean> {
+    try {
+      const [isInit] = await this.client.view({
+        function: `${MODULES.PAYMENTS}::is_initialized`,
+        type_arguments: [],
+        arguments: [address],
+      });
+      return Boolean(isInit);
+    } catch (error) {
+      // If view fails, assume not initialized
+      return false;
+    }
   }
 
   /**
@@ -590,12 +655,55 @@ class MovementService {
   }
 
   /**
-   * Get transaction history (graceful fallback)
+   * Get transaction history from payment events
    */
   async getTransactionHistory(limit: number = 10): Promise<any[]> {
-    // Return empty - contracts not deployed yet
-    console.log('ℹ️ Payment contract not deployed - no transaction history available');
-    return [];
+    try {
+      if (!this.account) return [];
+
+      // Check if payments are initialized first
+      const isInit = await this.isPaymentInitialized(this.account.address().hex());
+      if (!isInit) {
+        console.log('ℹ️ Payment history not initialized - no transactions available');
+        return [];
+      }
+
+      // Get sent payment count
+      const [sentCount] = await this.client.view({
+        function: `${MODULES.PAYMENTS}::get_sent_payments_count`,
+        type_arguments: [],
+        arguments: [this.account.address().hex()],
+      });
+
+      // Get received payment count  
+      const [receivedCount] = await this.client.view({
+        function: `${MODULES.PAYMENTS}::get_received_payments_count`,
+        type_arguments: [],
+        arguments: [this.account.address().hex()],
+      });
+
+      console.log(`📊 Payment stats - Sent: ${sentCount}, Received: ${receivedCount}`);
+      
+      // Return basic stats (full history requires event queries)
+      return [
+        {
+          type: 'summary',
+          sentCount: Number(sentCount),
+          receivedCount: Number(receivedCount),
+        }
+      ];
+    } catch (error: any) {
+      if (error?.message?.includes('JSON Parse')) {
+        console.log('ℹ️ Movement Network API unavailable');
+        return [];
+      }
+      if (error?.message?.includes('resource_not_found')) {
+        console.log('ℹ️ Payment history not initialized yet');
+        return [];
+      }
+      console.error('❌ Error getting transaction history:', error?.message || error);
+      return [];
+    }
   }
 }
 
